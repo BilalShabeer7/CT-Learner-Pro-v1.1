@@ -311,14 +311,6 @@ def cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
     b = b.reshape(1, -1)
     return float(cosine_similarity(a, b)[0][0])
 
-def convert_to_10_point_scale(score_100: float) -> float:
-    """Convert 0-100 score to 0-10 scale"""
-    return round((score_100 / 100) * 10, 1)
-
-def convert_to_100_point_scale(score_10: float) -> float:
-    """Convert 0-10 score to 0-100 scale"""
-    return round((score_10 / 10) * 100, 1)
-
 # ==================== ENHANCED GRADING MODULE (0-10 SCALE) ====================
 def apply_rubric_json(rubric: dict, model_ans: str, student_ans: str) -> Dict[str, Any]:
     """Apply rubric-based grading with 0-10 scale"""
@@ -804,4 +796,17 @@ def show_dashboard():
             <h3>💭 Critical Thinking</h3>
             <p>Advanced analysis of reasoning skills using Paul's framework.</p>
             <ul>
-                <li>9
+                <li>9-dimensional CT assessment</li>
+                <li>Sentence-level highlighting</li>
+                <li>Personalized improvement plans</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("""
+        <div class="module-card">
+            <h3>📚 Learning Resources</h3>
+            <p>Curated educational materials for skill development.</p>
+            <ul>
+                <li>Interactive exercises</li>
+               
