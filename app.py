@@ -1,5 +1,5 @@
 """
-CT-Learner-Pro V1.0 - Unified Educational Platform
+CT-Learner-Pro V1.1 - Unified Educational Platform
 Advanced RAG-based Auto-Grader with Critical Thinking Analysis
 Enhanced with heat maps, advanced visualizations, and 0-10 grading scale
 """
@@ -688,7 +688,7 @@ def generate_sample_data():
 def main():
     # Page configuration
     st.set_page_config(
-        page_title="CT-Learner Pro V1.0", 
+        page_title="CT-Learner Pro V1.1", 
         layout="wide",
         page_icon="🧠",
         initial_sidebar_state="expanded"
@@ -698,7 +698,7 @@ def main():
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
     
     # Header
-    st.markdown('<div class="main-header">🧠 CT-Learner Pro V1.0</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">🧠 CT-Learner Pro V1.1</div>', unsafe_allow_html=True)
     st.markdown('<div class="platform-subtitle">Unified Educational Platform • 0-10 Grading Scale • Enhanced Analytics</div>', unsafe_allow_html=True)
     
     # Initialize session state
