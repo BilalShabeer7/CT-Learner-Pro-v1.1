@@ -454,7 +454,16 @@ def create_comprehensive_dashboard(grading_results, ct_results):
         st.metric("Average Grade", f"{avg_grade:.1f}/10")
     
     with col2:
-        avg_ct = np.mean([np.mean(list(r[1].values())) for r in ct_results]) if ct_results else 0
+        # FIXED: Handle both old and new CT results structure
+        if ct_results and len(ct_results) > 0:
+            if isinstance(ct_results[0], tuple) and len(ct_results[0]) >= 2:
+                # New structure: (filename, ct_scores, suggestions, highlights, text)
+                avg_ct = np.mean([np.mean(list(r[1].values())) for r in ct_results])
+            else:
+                # Old structure or different format
+                avg_ct = np.mean([np.mean(list(r.values())) for r in ct_results if isinstance(r, dict)])
+        else:
+            avg_ct = 0
         st.metric("Average CT Score", f"{avg_ct:.2f}")
     
     with col3:
@@ -462,7 +471,14 @@ def create_comprehensive_dashboard(grading_results, ct_results):
         st.metric("Strong Performers", f"{strong_performers}/{len(grading_results)}")
     
     with col4:
-        improvement_needed = len([r for r in ct_results if np.mean(list(r[1].values())) < 0.6])
+        # FIXED: Handle CT results structure properly
+        if ct_results and len(ct_results) > 0:
+            if isinstance(ct_results[0], tuple) and len(ct_results[0]) >= 2:
+                improvement_needed = len([r for r in ct_results if np.mean(list(r[1].values())) < 0.6])
+            else:
+                improvement_needed = len([r for r in ct_results if np.mean(list(r.values())) < 0.6])
+        else:
+            improvement_needed = 0
         st.metric("Need CT Support", f"{improvement_needed}/{len(ct_results)}")
     
     # Enhanced Visualizations in Tabs
@@ -489,50 +505,67 @@ def create_comprehensive_dashboard(grading_results, ct_results):
     
     with tab2:
         # CT Analysis Heatmap
-        if ct_results:
+        if ct_results and len(ct_results) > 0:
             ct_df_data = []
-            for filename, ct_scores, _, _ in ct_results:
-                row = {"Filename": filename}
-                row.update(ct_scores)
-                ct_df_data.append(row)
+            for result in ct_results:
+                if isinstance(result, tuple) and len(result) >= 2:
+                    # New structure
+                    filename, ct_scores, _, _ = result
+                    row = {"Filename": filename}
+                    row.update(ct_scores)
+                    ct_df_data.append(row)
+                elif isinstance(result, dict):
+                    # Old structure
+                    row = {"Filename": result.get('filename', 'Unknown')}
+                    row.update(result.get('ct_scores', {}))
+                    ct_df_data.append(row)
             
-            ct_df = pd.DataFrame(ct_df_data)
-            ct_heatmap_data = ct_df.set_index("Filename")
-            
-            fig = create_heatmap(ct_heatmap_data, "Critical Thinking Skills Heatmap", "Viridis")
-            st.plotly_chart(fig, use_container_width=True)
+            if ct_df_data:
+                ct_df = pd.DataFrame(ct_df_data)
+                ct_heatmap_data = ct_df.set_index("Filename")
+                
+                fig = create_heatmap(ct_heatmap_data, "Critical Thinking Skills Heatmap", "Viridis")
+                st.plotly_chart(fig, use_container_width=True)
     
     with tab3:
         # Performance correlation matrix
         if grading_results and ct_results:
             # Create combined performance matrix
             performance_data = []
-            for i, (grade_result, ct_result) in enumerate(zip(grading_results, ct_results)):
-                row = {
-                    'Student': grade_result.get('name', f'Student {i+1}'),
-                    'Grade': grade_result.get('final_score', 0),
-                    'Avg_CT_Score': np.mean(list(ct_result[1].values()))
-                }
-                performance_data.append(row)
+            for i, grade_result in enumerate(grading_results):
+                if i < len(ct_results):
+                    ct_result = ct_results[i]
+                    if isinstance(ct_result, tuple) and len(ct_result) >= 2:
+                        avg_ct_score = np.mean(list(ct_result[1].values()))
+                    else:
+                        avg_ct_score = np.mean(list(ct_result.values())) if isinstance(ct_result, dict) else 0
+                    
+                    row = {
+                        'Student': grade_result.get('name', f'Student {i+1}'),
+                        'Grade': grade_result.get('final_score', 0),
+                        'Avg_CT_Score': avg_ct_score
+                    }
+                    performance_data.append(row)
             
-            perf_df = pd.DataFrame(performance_data)
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                # Scatter plot: Grade vs CT Score
-                fig = px.scatter(perf_df, x='Grade', y='Avg_CT_Score', hover_data=['Student'],
-                               title="Grade vs Critical Thinking Correlation",
-                               color_discrete_sequence=[COLOR_SCHEME["accent"]])
-                fig.update_layout(height=400)
-                st.plotly_chart(fig, use_container_width=True)
-            
-            with col2:
-                # Performance matrix
-                fig = px.density_heatmap(perf_df, x='Grade', y='Avg_CT_Score',
-                                       title="Performance Density Matrix",
-                                       nbinsx=8, nbinsy=8)
-                fig.update_layout(height=400)
-                st.plotly_chart(fig, use_container_width=True)
+            if performance_data:
+                perf_df = pd.DataFrame(performance_data)
+                
+                col1, col2 = st.columns(2)
+                with col1:
+                    # Scatter plot: Grade vs CT Score
+                    fig = px.scatter(perf_df, x='Grade', y='Avg_CT_Score', hover_data=['Student'],
+                                   title="Grade vs Critical Thinking Correlation",
+                                   color_discrete_sequence=[COLOR_SCHEME["accent"]])
+                    fig.update_layout(height=400)
+                    st.plotly_chart(fig, use_container_width=True)
+                
+                with col2:
+                    # Performance matrix
+                    fig = px.density_heatmap(perf_df, x='Grade', y='Avg_CT_Score',
+                                           title="Performance Density Matrix",
+                                           nbinsx=8, nbinsy=8)
+                    fig.update_layout(height=400)
+                    st.plotly_chart(fig, use_container_width=True)
     
     with tab4:
         # Comparative analysis
@@ -608,6 +641,37 @@ def highlight_ct_sentences(text: str) -> Dict[str, List[Tuple[str, str]]]:
                     break
     
     return highlighted
+
+def display_text_with_highlights(text: str, highlights: Dict[str, List[Tuple[str, str]]]):
+    """Display text with CT highlighting"""
+    sents = sentence_split(text)
+    
+    # Create a mapping of sentence to its CT standards
+    sentence_to_standards = {}
+    for standard, sentences in highlights.items():
+        for sent, color in sentences:
+            if sent not in sentence_to_standards:
+                sentence_to_standards[sent] = []
+            sentence_to_standards[sent].append((standard, color))
+    
+    # Display each sentence with appropriate highlighting
+    for sent in sents:
+        if sent in sentence_to_standards:
+            # This sentence has CT highlights
+            standards_info = sentence_to_standards[sent]
+            # Use the first standard's color for highlighting
+            first_standard, first_color = standards_info[0]
+            all_standards = ", ".join([std for std, _ in standards_info])
+            
+            st.markdown(
+                f'<div class="highlight-sentence" style="border-left-color: {first_color};">'
+                f'<strong>{all_standards}:</strong> {sent}'
+                f'</div>', 
+                unsafe_allow_html=True
+            )
+        else:
+            # Regular sentence without CT highlights
+            st.write(sent)
 
 def heuristic_ct_scores(text: str) -> Tuple[Dict[str, float], Dict[str, str], Dict[str, List[Tuple[str, str]]]]:
     """Calculate CT scores with highlighting"""
@@ -894,25 +958,36 @@ def show_ct_module():
         # Display CT results
         if st.session_state.ct_results:
             st.markdown("### CT Analysis Results")
-            for i, (filename, ct_scores, suggestions, highlights) in enumerate(st.session_state.ct_results):
-                with st.expander(f"🧠 {filename}", expanded=i==0):
-                    col1, col2 = st.columns([2, 1])
-                    
-                    with col1:
-                        st.markdown("#### 📖 Text with CT Highlights")
-                        # Display would show text with highlighted sentences
-                        st.info("CT highlighting would appear here with colored sentences")
+            for i, result in enumerate(st.session_state.ct_results):
+                if isinstance(result, tuple) and len(result) >= 4:
+                    filename, ct_scores, suggestions, highlights = result
+                    with st.expander(f"🧠 {filename}", expanded=i==0):
+                        col1, col2 = st.columns([2, 1])
                         
-                    with col2:
-                        # CT radar chart
-                        fig = create_ct_radar_chart(ct_scores, f"CT Profile - {filename}")
-                        st.plotly_chart(fig, use_container_width=True)
-                        
-                        # Improvement suggestions
-                        st.markdown("#### 💡 Improvement Areas")
-                        for standard, score in ct_scores.items():
-                            if score < 0.6:
-                                st.warning(f"**{standard}**: {suggestions[standard]}")
+                        with col1:
+                            st.markdown("#### 📖 Text with CT Highlights")
+                            # Get the original text for this file
+                            text = ""
+                            if hasattr(result, 'text'):
+                                text = result.text
+                            elif len(result) >= 5:
+                                text = result[4]  # Text is stored as the 5th element
+                            
+                            if text:
+                                display_text_with_highlights(text, highlights)
+                            else:
+                                st.info("Original text not available for highlighting")
+                                
+                        with col2:
+                            # CT radar chart
+                            fig = create_ct_radar_chart(ct_scores, f"CT Profile - {filename}")
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                            # Improvement suggestions
+                            st.markdown("#### 💡 Improvement Areas")
+                            for standard, score in ct_scores.items():
+                                if score < 0.6:
+                                    st.warning(f"**{standard}**: {suggestions[standard]}")
     
     with tab2:
         st.markdown("### Critical Thinking Standards Guide")
@@ -929,20 +1004,27 @@ def show_ct_module():
         if st.session_state.ct_results:
             # CT scores comparison
             ct_df_data = []
-            for filename, ct_scores, _, _ in st.session_state.ct_results:
-                row = {"Filename": filename}
-                row.update(ct_scores)
-                ct_df_data.append(row)
+            for result in st.session_state.ct_results:
+                if isinstance(result, tuple) and len(result) >= 2:
+                    filename, ct_scores, _, _ = result
+                    row = {"Filename": filename}
+                    row.update(ct_scores)
+                    ct_df_data.append(row)
+                elif isinstance(result, dict):
+                    row = {"Filename": result.get('filename', 'Unknown')}
+                    row.update(result.get('ct_scores', {}))
+                    ct_df_data.append(row)
             
-            ct_df = pd.DataFrame(ct_df_data)
-            st.dataframe(ct_df.set_index("Filename").round(3), use_container_width=True)
-            
-            # Visualization
-            melted_df = ct_df.melt(id_vars=["Filename"], var_name="CT Standard", value_name="Score")
-            fig = px.box(melted_df, x="CT Standard", y="Score", 
-                        title="Distribution of CT Scores Across Standards",
-                        color_discrete_sequence=[COLOR_SCHEME["primary"]])
-            st.plotly_chart(fig, use_container_width=True)
+            if ct_df_data:
+                ct_df = pd.DataFrame(ct_df_data)
+                st.dataframe(ct_df.set_index("Filename").round(3), use_container_width=True)
+                
+                # Visualization
+                melted_df = ct_df.melt(id_vars=["Filename"], var_name="CT Standard", value_name="Score")
+                fig = px.box(melted_df, x="CT Standard", y="Score", 
+                            title="Distribution of CT Scores Across Standards",
+                            color_discrete_sequence=[COLOR_SCHEME["primary"]])
+                st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("No CT analysis data available. Run an analysis first.")
 
@@ -954,8 +1036,8 @@ def show_progress_module():
         st.info("No progress data available. Complete some grading or CT analyses first.")
         return
     
-    create_comprehensive_dashboard(st.session_state.grading_results, 
-                            [r[1] for r in st.session_state.ct_results] if st.session_state.ct_results else [])
+    # FIXED: Pass CT results properly to dashboard
+    create_comprehensive_dashboard(st.session_state.grading_results, st.session_state.ct_results)
     
     # Individual student progress
     st.markdown("### 👤 Individual Progress Analysis")
@@ -1007,21 +1089,23 @@ def show_resources_module():
         st.markdown("### Personalized Improvement Plans")
         
         if st.session_state.ct_results:
-            for filename, ct_scores, suggestions, _ in st.session_state.ct_results:
-                with st.expander(f"📋 Improvement Plan - {filename}"):
-                    weak_areas = [(std, score) for std, score in ct_scores.items() if score < 0.6]
-                    strong_areas = [(std, score) for std, score in ct_scores.items() if score >= 0.7]
-                    
-                    if weak_areas:
-                        st.markdown("#### 🎯 Focus Areas")
-                        for std, score in weak_areas:
-                            st.markdown(f"**{std}** (Score: {score:.2f})")
-                            st.markdown(f"*Suggestion:* {suggestions[std]}")
-                    
-                    if strong_areas:
-                        st.markdown("#### ✅ Strengths")
-                        for std, score in strong_areas:
-                            st.markdown(f"**{std}** (Score: {score:.2f})")
+            for result in st.session_state.ct_results:
+                if isinstance(result, tuple) and len(result) >= 3:
+                    filename, ct_scores, suggestions, _ = result
+                    with st.expander(f"📋 Improvement Plan - {filename}"):
+                        weak_areas = [(std, score) for std, score in ct_scores.items() if score < 0.6]
+                        strong_areas = [(std, score) for std, score in ct_scores.items() if score >= 0.7]
+                        
+                        if weak_areas:
+                            st.markdown("#### 🎯 Focus Areas")
+                            for std, score in weak_areas:
+                                st.markdown(f"**{std}** (Score: {score:.2f})")
+                                st.markdown(f"*Suggestion:* {suggestions[std]}")
+                        
+                        if strong_areas:
+                            st.markdown("#### ✅ Strengths")
+                            for std, score in strong_areas:
+                                st.markdown(f"**{std}** (Score: {score:.2f})")
         else:
             st.info("No CT analysis data available. Run a CT analysis first to generate improvement plans.")
 
@@ -1145,7 +1229,8 @@ def process_ct_analysis(uploaded_files):
         progress_bar.progress(progress, text=f"Analyzing {idx+1}/{len(submissions)}...")
         
         ct_scores, suggestions, highlights = heuristic_ct_scores(submission["text"])
-        ct_results.append((submission["filename"], ct_scores, suggestions, highlights))
+        # Store as tuple with text included: (filename, ct_scores, suggestions, highlights, text)
+        ct_results.append((submission["filename"], ct_scores, suggestions, highlights, submission["text"]))
     
     progress_bar.progress(1.0, text="✅ CT analysis complete!")
     st.session_state.ct_results = ct_results
@@ -1209,13 +1294,17 @@ def display_student_progress(student_idx):
         with col2:
             st.markdown("#### 💭 Critical Thinking")
             if student_idx < len(st.session_state.ct_results):
-                ct_scores = st.session_state.ct_results[student_idx][1]
-                avg_ct = np.mean(list(ct_scores.values()))
-                st.metric("Average CT Score", f"{avg_ct:.2f}")
-                
-                # CT strengths/weaknesses
-                weak_areas = [std for std, score in ct_scores.items() if score < 0.6]
-                st.markdown(f"**Areas for Improvement:** {', '.join(weak_areas) if weak_areas else 'None'}")
+                ct_result = st.session_state.ct_results[student_idx]
+                if isinstance(ct_result, tuple) and len(ct_result) >= 2:
+                    ct_scores = ct_result[1]
+                    avg_ct = np.mean(list(ct_scores.values()))
+                    st.metric("Average CT Score", f"{avg_ct:.2f}")
+                    
+                    # CT strengths/weaknesses
+                    weak_areas = [std for std, score in ct_scores.items() if score < 0.6]
+                    st.markdown(f"**Areas for Improvement:** {', '.join(weak_areas) if weak_areas else 'None'}")
+                else:
+                    st.info("CT data format error")
             else:
                 st.info("No CT analysis available for this student")
         
