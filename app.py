@@ -809,4 +809,424 @@ def show_dashboard():
             <p>Curated educational materials for skill development.</p>
             <ul>
                 <li>Interactive exercises</li>
-               
+                <li>Subject-agnostic content</li>
+                <li>Adaptive learning paths</li>
+            </ul>
+        </div>
+        """, unsafe_allow_html=True)
+    
+    # Recent activity
+    st.markdown("## 📋 Recent Activity")
+    
+    if st.session_state.grading_results or st.session_state.ct_results:
+        create_comprehensive_dashboard(st.session_state.grading_results, st.session_state.ct_results)
+    else:
+        st.info("👆 Get started by using the Auto-Grading or CT Analysis modules to generate data for your dashboard.")
+
+def show_grading_module():
+    """Auto-grading module"""
+    st.markdown("## 🎓 Automated Grading Module (0-10 Scale)")
+    
+    tab1, tab2, tab3 = st.tabs(["📥 Input Materials", "🎯 Grading Results", "⚙️ Settings"])
+    
+    with tab1:
+        st.markdown("### Upload Learning Materials")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### 📋 Exercise Description")
+            ex_file = st.file_uploader("Upload exercise document", type=["txt","docx","pdf"])
+            ex_text_paste = st.text_area("Or paste exercise description", height=120)
+            
+            st.markdown("#### 📝 Student Submissions")
+            student_files = st.file_uploader("Upload student files", accept_multiple_files=True, type=["txt","docx","pdf"])
+            student_paste = st.text_area("Or paste student submissions", height=150, 
+                                       placeholder="Separate with '---' for multiple submissions")
+
+        with col2:
+            st.markdown("#### 📖 Model Solution")
+            model_file = st.file_uploader("Upload model solution", type=["txt","docx","pdf"])
+            model_text_paste = st.text_area("Or paste model solution", height=120)
+            
+            st.markdown("#### 📊 Grading Rubric (Optional)")
+            rubric_file = st.file_uploader("Upload rubric JSON", type=["json"])
+            rubric_text_paste = st.text_area("Or paste rubric JSON", height=140,
+                                           placeholder='{"criteria": [{"name": "Content", "weight": 0.7, "type": "similarity"}]}')
+        
+        # Action button
+        st.markdown("---")
+        if st.button("🚀 Start Grading Process", type="primary", use_container_width=True):
+            process_grading(ex_file, ex_text_paste, model_file, model_text_paste, 
+                          student_files, student_paste, rubric_file, rubric_text_paste)
+    
+    with tab2:
+        display_grading_results()
+    
+    with tab3:
+        st.markdown("### Grading Configuration")
+        st.slider("Similarity Weight", 0.0, 1.0, 0.7, help="How much weight to give content similarity")
+        st.slider("Grammar Penalty", 0.0, 2.0, 1.5, help="Points deducted per grammar issue")
+        st.toggle("Enable AI Feedback", value=True)
+        st.toggle("Show Detailed Breakdown", value=True)
+
+def show_ct_module():
+    """Critical Thinking analysis module"""
+    st.markdown("## 💭 Critical Thinking Analysis")
+    
+    tab1, tab2, tab3 = st.tabs(["📊 CT Assessment", "🎯 CT Rubric Guide", "📈 CT Analytics"])
+    
+    with tab1:
+        st.markdown("### Analyze Critical Thinking Skills")
+        
+        uploaded_files = st.file_uploader(
+            "Upload student submissions for CT analysis",
+            accept_multiple_files=True,
+            type=['txt','pdf','docx'],
+            help="Upload multiple files for batch analysis"
+        )
+        
+        if uploaded_files:
+            if st.button("🔍 Analyze Critical Thinking", type="primary", use_container_width=True):
+                with st.spinner("Analyzing critical thinking skills..."):
+                    process_ct_analysis(uploaded_files)
+        
+        # Display CT results
+        if st.session_state.ct_results:
+            st.markdown("### CT Analysis Results")
+            for i, (filename, ct_scores, suggestions, highlights) in enumerate(st.session_state.ct_results):
+                with st.expander(f"🧠 {filename}", expanded=i==0):
+                    col1, col2 = st.columns([2, 1])
+                    
+                    with col1:
+                        st.markdown("#### 📖 Text with CT Highlights")
+                        # Display would show text with highlighted sentences
+                        st.info("CT highlighting would appear here with colored sentences")
+                        
+                    with col2:
+                        # CT radar chart
+                        fig = create_ct_radar_chart(ct_scores, f"CT Profile - {filename}")
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        # Improvement suggestions
+                        st.markdown("#### 💡 Improvement Areas")
+                        for standard, score in ct_scores.items():
+                            if score < 0.6:
+                                st.warning(f"**{standard}**: {suggestions[standard]}")
+    
+    with tab2:
+        st.markdown("### Critical Thinking Standards Guide")
+        
+        for standard, data in PAUL_CT_RUBRIC.items():
+            with st.expander(f"🎯 {standard}"):
+                st.markdown(f"**Description:** {data['description']}")
+                st.markdown(f"**Feedback Prompt:** *{data['feedback_q']}*")
+                st.markdown(f"**Color Code:** `{data['color']}`")
+                st.markdown("**Indicator Patterns:** " + ", ".join(f"`{p}`" for p in data['patterns']))
+    
+    with tab3:
+        st.markdown("### CT Analytics Overview")
+        if st.session_state.ct_results:
+            # CT scores comparison
+            ct_df_data = []
+            for filename, ct_scores, _, _ in st.session_state.ct_results:
+                row = {"Filename": filename}
+                row.update(ct_scores)
+                ct_df_data.append(row)
+            
+            ct_df = pd.DataFrame(ct_df_data)
+            st.dataframe(ct_df.set_index("Filename").round(3), use_container_width=True)
+            
+            # Visualization
+            melted_df = ct_df.melt(id_vars=["Filename"], var_name="CT Standard", value_name="Score")
+            fig = px.box(melted_df, x="CT Standard", y="Score", 
+                        title="Distribution of CT Scores Across Standards",
+                        color_discrete_sequence=[COLOR_SCHEME["primary"]])
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No CT analysis data available. Run an analysis first.")
+
+def show_progress_module():
+    """Progress tracking module"""
+    st.markdown("## 📈 Learning Progress Tracking")
+    
+    if not st.session_state.grading_results and not st.session_state.ct_results:
+        st.info("No progress data available. Complete some grading or CT analyses first.")
+        return
+    
+    create_comprehensive_dashboard(st.session_state.grading_results, 
+                            [r[1] for r in st.session_state.ct_results] if st.session_state.ct_results else [])
+    
+    # Individual student progress
+    st.markdown("### 👤 Individual Progress Analysis")
+    
+    if st.session_state.grading_results:
+        student_options = [r.get('name', f'Student {i+1}') for i, r in enumerate(st.session_state.grading_results)]
+        selected_student = st.selectbox("Select Student", student_options)
+        
+        if selected_student:
+            student_idx = student_options.index(selected_student)
+            display_student_progress(student_idx)
+
+def show_resources_module():
+    """Learning resources module"""
+    st.markdown("## 📚 Learning Resources")
+    
+    tab1, tab2, tab3 = st.tabs(["💡 CT Exercises", "📖 Study Materials", "🎯 Improvement Plans"])
+    
+    with tab1:
+        st.markdown("### Critical Thinking Exercises")
+        
+        exercises = {
+            "Argument Analysis": "Analyze the structure and validity of arguments in sample texts",
+            "Perspective Taking": "Write responses from multiple viewpoints on controversial topics",
+            "Evidence Evaluation": "Critique the quality and relevance of evidence in arguments",
+            "Assumption Identification": "Identify hidden assumptions in reasoning chains"
+        }
+        
+        for exercise, description in exercises.items():
+            with st.expander(f"🧩 {exercise}"):
+                st.write(description)
+                if st.button(f"Start {exercise}", key=f"ex_{exercise}"):
+                    st.success(f"Starting {exercise} exercise...")
+    
+    with tab2:
+        st.markdown("### Study Materials by CT Standard")
+        
+        selected_standard = st.selectbox("Select CT Standard", list(PAUL_CT_RUBRIC.keys()))
+        if selected_standard:
+            std_data = PAUL_CT_RUBRIC[selected_standard]
+            st.markdown(f"#### {selected_standard}")
+            st.markdown(f"**Description:** {std_data['description']}")
+            st.markdown(f"**Key Skills:**")
+            st.markdown("- Practice providing clear examples and explanations")
+            st.markdown("- Use specific language to illustrate points")
+            st.markdown("- Structure information logically")
+    
+    with tab3:
+        st.markdown("### Personalized Improvement Plans")
+        
+        if st.session_state.ct_results:
+            for filename, ct_scores, suggestions, _ in st.session_state.ct_results:
+                with st.expander(f"📋 Improvement Plan - {filename}"):
+                    weak_areas = [(std, score) for std, score in ct_scores.items() if score < 0.6]
+                    strong_areas = [(std, score) for std, score in ct_scores.items() if score >= 0.7]
+                    
+                    if weak_areas:
+                        st.markdown("#### 🎯 Focus Areas")
+                        for std, score in weak_areas:
+                            st.markdown(f"**{std}** (Score: {score:.2f})")
+                            st.markdown(f"*Suggestion:* {suggestions[std]}")
+                    
+                    if strong_areas:
+                        st.markdown("#### ✅ Strengths")
+                        for std, score in strong_areas:
+                            st.markdown(f"**{std}** (Score: {score:.2f})")
+        else:
+            st.info("No CT analysis data available. Run a CT analysis first to generate improvement plans.")
+
+# ==================== PROCESSING FUNCTIONS ====================
+def process_grading(ex_file, ex_text_paste, model_file, model_text_paste, student_files, student_paste, rubric_file, rubric_text_paste):
+    """Process grading workflow"""
+    # Input validation
+    exercise_text = ex_text_paste.strip() if ex_text_paste.strip() else read_text_file(ex_file)
+    model_text = model_text_paste.strip() if model_text_paste.strip() else read_text_file(model_file)
+    
+    if not exercise_text:
+        st.error("❌ Please provide the exercise description")
+        return
+    
+    if not model_text:
+        st.error("❌ Please provide the model solution")
+        return
+    
+    # Process student submissions
+    student_texts = []
+    student_names = []
+    
+    if student_files:
+        for f in student_files:
+            txt = read_text_file(f)
+            if txt.strip():
+                student_texts.append(txt.strip())
+                student_names.append(f.name)
+    
+    if student_paste.strip():
+        parts = [p.strip() for p in student_paste.split("\n---\n") if p.strip()]
+        for i, p in enumerate(parts):
+            student_texts.append(p)
+            student_names.append(f"Student_{i+1}")
+    
+    if not student_texts:
+        st.error("❌ No student submissions provided")
+        return
+    
+    # Process rubric
+    rubric_obj = None
+    rubric_text = rubric_text_paste.strip() if rubric_text_paste.strip() else ""
+    if not rubric_text and rubric_file:
+        rubric_text = rubric_file.getvalue().decode("utf-8")
+    if rubric_text:
+        try:
+            rubric_obj = json.loads(rubric_text)
+        except Exception as e:
+            st.error(f"❌ Invalid rubric JSON: {e}")
+            return
+    
+    # Grade submissions
+    progress_bar = st.progress(0, text=f"Grading 0/{len(student_texts)} students...")
+    results = []
+    
+    for idx, (s_text, s_name) in enumerate(zip(student_texts, student_names)):
+        progress = (idx) / len(student_texts)
+        progress_bar.progress(progress, text=f"Grading {idx+1}/{len(student_texts)}: {s_name}...")
+        
+        try:
+            if rubric_obj:
+                res = apply_rubric_json(rubric_obj, model_text, s_text)
+            else:
+                res = heuristic_grade(model_text, s_text)
+            
+            # Generate feedback
+            sim_pct = round(res.get("similarity", 0) * 100, 2)
+            issues = res.get("grammar", {}).get("issues_count", "N/A")
+            reasoning = f"**Similarity to model answer:** {sim_pct}% | **Grammar issues:** {issues}"
+            
+            feedback_lines = []
+            similarity = res.get("similarity", 0)
+            
+            if similarity >= 0.75:
+                feedback_lines.append("Excellent content coverage and task achievement")
+                feedback_lines.append("Well-structured response with clear organization")
+            elif similarity >= 0.5:
+                feedback_lines.append("Good content coverage with some minor gaps")
+                feedback_lines.append("Consider expanding on key points for better depth")
+            else:
+                feedback_lines.append("Significant content gaps - review core concepts")
+                feedback_lines.append("Focus on addressing all parts of the prompt")
+            
+            results.append({
+                "name": s_name,
+                "final_score": res.get("final_score"),
+                "reasoning": reasoning,
+                "feedback_lines": feedback_lines,
+                "details": res,
+                "timestamp": datetime.now().isoformat()
+            })
+            
+        except Exception as e:
+            results.append({
+                "name": s_name, 
+                "error": f"Grading failed: {str(e)}"
+            })
+    
+    progress_bar.progress(1.0, text=f"✅ Completed grading {len(student_texts)} students!")
+    st.session_state.grading_results = results
+    st.success(f"🎉 Successfully graded {len(student_texts)} submissions!")
+    st.rerun()
+
+def process_ct_analysis(uploaded_files):
+    """Process CT analysis"""
+    submissions = []
+    for f in uploaded_files:
+        text = read_text_file(f)
+        if text.strip():
+            submissions.append({"filename": f.name, "text": text})
+    
+    if not submissions:
+        st.error("❌ No valid text extracted from uploaded files")
+        return
+    
+    ct_results = []
+    progress_bar = st.progress(0, text="Analyzing critical thinking...")
+    
+    for idx, submission in enumerate(submissions):
+        progress = (idx) / len(submissions)
+        progress_bar.progress(progress, text=f"Analyzing {idx+1}/{len(submissions)}...")
+        
+        ct_scores, suggestions, highlights = heuristic_ct_scores(submission["text"])
+        ct_results.append((submission["filename"], ct_scores, suggestions, highlights))
+    
+    progress_bar.progress(1.0, text="✅ CT analysis complete!")
+    st.session_state.ct_results = ct_results
+    st.success(f"🎉 Analyzed {len(submissions)} submissions for critical thinking!")
+
+def display_grading_results():
+    """Display grading results"""
+    if not st.session_state.grading_results:
+        st.info("👆 No grading results yet. Start by uploading materials and running the grading process.")
+        return
+    
+    st.markdown("### 📊 Grading Results (0-10 Scale)")
+    
+    for i, r in enumerate(st.session_state.grading_results):
+        with st.container():
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.markdown(f"### 👨‍🎓 {r.get('name', 'Student')}")
+            with col2:
+                score = r.get('final_score', 0)
+                score_color = COLOR_SCHEME["success"] if score >= 8 else COLOR_SCHEME["warning"] if score >= 6 else COLOR_SCHEME["danger"]
+                st.markdown(f"<h2 style='color: {score_color}; text-align: center;'>{score}/10</h2>", unsafe_allow_html=True)
+            
+            # Progress bar
+            st.markdown(f'<div class="progress-bar"><div class="progress-fill" style="width: {score * 10}%;"></div></div>', unsafe_allow_html=True)
+            
+            # Score interpretation
+            if score >= 8:
+                st.markdown('<div class="success-box">🎉 Excellent work! Strong understanding demonstrated.</div>', unsafe_allow_html=True)
+            elif score >= 6:
+                st.markdown('<div class="warning-box">📚 Good effort, with room for improvement in key areas.</div>', unsafe_allow_html=True)
+            else:
+                st.markdown('<div class="warning-box">💡 Needs significant improvement. Review fundamental concepts.</div>', unsafe_allow_html=True)
+            
+            # Detailed feedback
+            with st.expander("📋 Detailed Feedback", expanded=True):
+                st.markdown("**Key Observations:**")
+                st.write(r["reasoning"])
+                
+                st.markdown("**Actionable Steps:**")
+                for line in r["feedback_lines"]:
+                    st.markdown(f'<div class="feedback-item">💡 {line}</div>', unsafe_allow_html=True)
+            
+            st.divider()
+
+def display_student_progress(student_idx):
+    """Display individual student progress"""
+    if student_idx < len(st.session_state.grading_results):
+        student_data = st.session_state.grading_results[student_idx]
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.markdown("#### 📈 Academic Performance")
+            st.metric("Current Grade", f"{student_data.get('final_score', 0)}/10")
+            
+            # Grade trend (simplified)
+            st.markdown("**Performance Trends:**")
+            st.info("Consistent performance across assignments")
+        
+        with col2:
+            st.markdown("#### 💭 Critical Thinking")
+            if student_idx < len(st.session_state.ct_results):
+                ct_scores = st.session_state.ct_results[student_idx][1]
+                avg_ct = np.mean(list(ct_scores.values()))
+                st.metric("Average CT Score", f"{avg_ct:.2f}")
+                
+                # CT strengths/weaknesses
+                weak_areas = [std for std, score in ct_scores.items() if score < 0.6]
+                st.markdown(f"**Areas for Improvement:** {', '.join(weak_areas) if weak_areas else 'None'}")
+            else:
+                st.info("No CT analysis available for this student")
+        
+        # Learning recommendations
+        st.markdown("#### 🎯 Recommended Actions")
+        st.markdown("""
+        - Complete targeted CT exercises in weak areas
+        - Review model solutions for complex problems
+        - Practice argument construction and evidence evaluation
+        - Participate in peer review activities
+        """)
+
+if __name__ == "__main__":
+    main()
