@@ -22,11 +22,8 @@ import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import matplotlib.pyplot as plt
-import seaborn as sns
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
-from sklearn.preprocessing import MinMaxScaler
 
 # File processing
 import docx
@@ -41,10 +38,6 @@ try:
     lang_tool = language_tool_python.LanguageTool("en-US")
 except Exception:
     lang_tool = None
-
-# NLP & ML
-import torch
-from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 # ==================== STYLING & CONFIGURATION ====================
 COLOR_SCHEME = {
@@ -128,14 +121,12 @@ CUSTOM_CSS = f"""
         text-align: center;
         margin-bottom: 1.5rem;
         font-weight: 700;
-        font-family: 'Inter', sans-serif;
     }}
     .platform-subtitle {{
         font-size: 1.3rem !important;
         color: {COLOR_SCHEME['text']};
         text-align: center;
         margin-bottom: 2.5rem;
-        font-family: 'Source Sans Pro', sans-serif;
     }}
     .module-card {{
         background: linear-gradient(135deg, {COLOR_SCHEME['background']} 0%, #FFFFFF 100%);
@@ -144,11 +135,6 @@ CUSTOM_CSS = f"""
         border-left: 5px solid {COLOR_SCHEME['primary']};
         margin: 1rem 0;
         box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        transition: transform 0.2s ease;
-    }}
-    .module-card:hover {{
-        transform: translateY(-2px);
-        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
     }}
     .metric-card {{
         background-color: {COLOR_SCHEME['light']};
@@ -182,7 +168,6 @@ CUSTOM_CSS = f"""
     .progress-fill {{
         height: 100%;
         background: linear-gradient(90deg, {COLOR_SCHEME['primary']}, {COLOR_SCHEME['secondary']});
-        transition: width 0.5s ease-in-out;
         border-radius: 6px;
     }}
     .feedback-item {{
@@ -191,11 +176,6 @@ CUSTOM_CSS = f"""
         border-radius: 8px;
         background-color: {COLOR_SCHEME['light']};
         border-left: 4px solid {COLOR_SCHEME['primary']};
-        transition: all 0.3s ease;
-    }}
-    .feedback-item:hover {{
-        background-color: {COLOR_SCHEME['background']};
-        transform: translateX(5px);
     }}
     .highlight-sentence {{
         padding: 0.8rem;
@@ -205,14 +185,6 @@ CUSTOM_CSS = f"""
         background-color: rgba(255, 255, 255, 0.8);
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     }}
-    .grade-badge {{
-        display: inline-block;
-        padding: 0.5rem 1rem;
-        border-radius: 20px;
-        font-weight: bold;
-        font-size: 1.2rem;
-        margin: 0.5rem 0;
-    }}
 </style>
 """
 
@@ -221,60 +193,46 @@ CUSTOM_CSS = f"""
 def load_models():
     """Load all required models"""
     embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
-    
-    # Load emotion model if needed
-    emotion_model = None
-    try:
-        emotion_model = {
-            "tok": AutoTokenizer.from_pretrained("j-hartmann/emotion-english-roberta-large"),
-            "model": AutoModelForSequenceClassification.from_pretrained("j-hartmann/emotion-english-roberta-large"),
-            "device": torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        }
-        emotion_model["model"].to(emotion_model["device"])
-    except Exception as e:
-        st.warning(f"Emotion model not available: {e}")
-    
-    return embedding_model, emotion_model
+    return embedding_model
 
-embedding_model, emotion_model = load_models()
+embedding_model = load_models()
 
 def read_text_file(uploaded_file) -> str:
     """Enhanced file reader with progress tracking"""
     if uploaded_file is None:
         return ""
     
-    with st.status(f"📄 Processing {uploaded_file.name}...", state="running") as status:
-        try:
-            content = uploaded_file.getvalue()
-            name = uploaded_file.name.lower()
-            
-            if name.endswith(".txt"):
-                result = content.decode("utf-8")
-            elif name.endswith(".docx"):
-                if docx2txt:
-                    tmp_path = f"/tmp/temp_upload_{int(time.time())}.docx"
-                    with open(tmp_path, "wb") as f:
-                        f.write(content)
-                    result = docx2txt.process(tmp_path)
-                else:
-                    result = ""
-                    st.warning("📝 docx2txt not installed; please install with: pip install docx2txt")
-            elif name.endswith(".pdf"):
-                result = extract_text_from_pdf_bytes(content)
+    try:
+        content = uploaded_file.getvalue()
+        name = uploaded_file.name.lower()
+        
+        if name.endswith(".txt"):
+            return content.decode("utf-8")
+        elif name.endswith(".docx"):
+            if docx2txt:
+                tmp_path = f"/tmp/temp_upload_{int(time.time())}.docx"
+                with open(tmp_path, "wb") as f:
+                    f.write(content)
+                result = docx2txt.process(tmp_path)
+                os.unlink(tmp_path)
+                return result
             else:
-                result = content.decode("utf-8")
-                
-            status.update(label=f"✅ Processed {uploaded_file.name}", state="complete")
-            return result
-        except Exception as e:
-            status.update(label=f"❌ Error processing {uploaded_file.name}", state="error")
-            return ""
+                st.warning("📝 docx2txt not installed; please install with: pip install docx2txt")
+                return ""
+        elif name.endswith(".pdf"):
+            return extract_text_from_pdf_bytes(content)
+        else:
+            return content.decode("utf-8")
+    except Exception as e:
+        st.error(f"❌ Error processing {uploaded_file.name}: {str(e)}")
+        return ""
 
 def extract_text_from_pdf_bytes(b: bytes) -> str:
     """Extract text from PDF bytes"""
     with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as f:
-        f.write(b); f.flush()
+        f.write(b)
         tmp = f.name
+    
     try:
         text_pages = []
         with pdfplumber.open(tmp) as pdf:
@@ -292,18 +250,7 @@ def extract_text_from_pdf_bytes(b: bytes) -> str:
 def embed_texts(texts: List[str]) -> np.ndarray:
     """Embed texts with progress tracking"""
     texts = [t if t is not None else "" for t in texts]
-    
-    progress_text = "🔍 Analyzing text similarities..."
-    my_bar = st.progress(0, text=progress_text)
-    
-    for i in range(100):
-        time.sleep(0.01)
-        my_bar.progress(i + 1, text=progress_text)
-    
-    vectors = embedding_model.encode(texts, convert_to_numpy=True, show_progress_bar=False)
-    my_bar.empty()
-    
-    return vectors
+    return embedding_model.encode(texts, convert_to_numpy=True, show_progress_bar=False)
 
 def cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
     """Calculate cosine similarity"""
@@ -311,50 +258,47 @@ def cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
     b = b.reshape(1, -1)
     return float(cosine_similarity(a, b)[0][0])
 
-# ==================== ENHANCED GRADING MODULE (0-10 SCALE) ====================
+# ==================== GRADING MODULE (0-10 SCALE) ====================
 def apply_rubric_json(rubric: dict, model_ans: str, student_ans: str) -> Dict[str, Any]:
     """Apply rubric-based grading with 0-10 scale"""
     criteria = rubric.get("criteria", [])
     if not criteria:
         return heuristic_grade(model_ans, student_ans)
 
-    with st.status("📊 Applying rubric criteria...", state="running") as status:
-        vecs = embed_texts([model_ans, student_ans])
-        sim = cosine_sim(vecs[0], vecs[1])
-        sim_norm = max(0.0, min((sim + 1) / 2.0, 1.0))
-        g = grammar_check(student_ans)
-        issues = g["issues_count"] if g.get("available") else None
+    vecs = embed_texts([model_ans, student_ans])
+    sim = cosine_sim(vecs[0], vecs[1])
+    sim_norm = max(0.0, min((sim + 1) / 2.0, 1.0))
+    g = grammar_check(student_ans)
+    issues = g["issues_count"] if g.get("available") else None
 
-        total_weight = sum(c.get("weight", 0) for c in criteria) or 1.0
-        total_score = 0.0
-        breakdown = []
+    total_weight = sum(c.get("weight", 0) for c in criteria) or 1.0
+    total_score = 0.0
+    breakdown = []
+    
+    for i, c in enumerate(criteria):
+        name = c.get("name", f"Criterion {i+1}")
+        w = c.get("weight", 0) / total_weight
+        t = c.get("type", "similarity")
+        subscore = 0.0
         
-        for i, c in enumerate(criteria):
-            name = c.get("name", f"Criterion {i+1}")
-            w = c.get("weight", 0) / total_weight
-            t = c.get("type", "similarity")
-            subscore = 0.0
-            
-            if t == "similarity":
-                subscore = sim_norm * 10  # 0-10 scale
-            elif t == "grammar_penalty":
-                if issues is None:
-                    subscore = 10.0
-                else:
-                    penalty_per = c.get("penalty_per_issue", 0.15)  # Adjusted for 0-10 scale
-                    subscore = max(0.0, 10.0 - penalty_per * issues)
+        if t == "similarity":
+            subscore = sim_norm * 10
+        elif t == "grammar_penalty":
+            if issues is None:
+                subscore = 10.0
             else:
-                subscore = sim_norm * 10
-                
-            total_score += subscore * w
-            breakdown.append({
-                "criterion": name, 
-                "weight": round(w,3), 
-                "subscore": round(subscore,2),
-                "type": t
-            })
-        
-        status.update(label="✅ Rubric applied successfully", state="complete")
+                penalty_per = c.get("penalty_per_issue", 0.15)
+                subscore = max(0.0, 10.0 - penalty_per * issues)
+        else:
+            subscore = sim_norm * 10
+            
+        total_score += subscore * w
+        breakdown.append({
+            "criterion": name, 
+            "weight": round(w,3), 
+            "subscore": round(subscore,2),
+            "type": t
+        })
 
     final_score = round(total_score, 2)
     return {
@@ -367,24 +311,22 @@ def apply_rubric_json(rubric: dict, model_ans: str, student_ans: str) -> Dict[st
 
 def heuristic_grade(model_ans: str, student_ans: str) -> Dict[str, Any]:
     """Heuristic grading fallback with 0-10 scale"""
-    with st.status("🎯 Computing similarity scores...", state="running") as status:
-        vecs = embed_texts([model_ans, student_ans])
-        sim = cosine_sim(vecs[0], vecs[1])
-        sim_norm = max(0.0, min((sim + 1) / 2.0, 1.0))
-        base = sim_norm * 10  # 0-10 scale
-        g = grammar_check(student_ans)
-        penalty = 0.0
+    vecs = embed_texts([model_ans, student_ans])
+    sim = cosine_sim(vecs[0], vecs[1])
+    sim_norm = max(0.0, min((sim + 1) / 2.0, 1.0))
+    base = sim_norm * 10
+    g = grammar_check(student_ans)
+    penalty = 0.0
+    
+    if g.get("available"):
+        issues = g["issues_count"]
+        penalty = min(4.0, issues * 0.15)
         
-        if g.get("available"):
-            issues = g["issues_count"]
-            penalty = min(4.0, issues * 0.15)  # Adjusted for 0-10 scale
-            
-        final = round(max(0.0, base - penalty), 2)
-        breakdown = [
-            {"criterion": "Content Similarity", "weight": 0.8, "subscore": round(base,2), "type": "similarity"},
-            {"criterion": "Grammar & Mechanics", "weight": 0.2, "subscore": round(max(0, 10 - penalty),2), "type": "grammar"}
-        ]
-        status.update(label="✅ Automatic grading completed", state="complete")
+    final = round(max(0.0, base - penalty), 2)
+    breakdown = [
+        {"criterion": "Content Similarity", "weight": 0.8, "subscore": round(base,2), "type": "similarity"},
+        {"criterion": "Grammar & Mechanics", "weight": 0.2, "subscore": round(max(0, 10 - penalty),2), "type": "grammar"}
+    ]
         
     return {
         "final_score": final, 
@@ -400,7 +342,7 @@ def grammar_check(text: str) -> Dict[str, Any]:
     if not lang_tool or not text.strip():
         return {"available": False, "issues_count": 0, "examples": []}
     
-    with st.status("🔍 Checking grammar and spelling...", state="running") as status:
+    try:
         matches = lang_tool.check(text)
         examples = []
         for m in matches[:6]:
@@ -410,18 +352,19 @@ def grammar_check(text: str) -> Dict[str, Any]:
                 "context": context,
                 "suggestions": m.replacements[:3]
             })
-        status.update(label=f"✅ Found {len(matches)} grammar issues", state="complete")
         
-    return {"available": True, "issues_count": len(matches), "examples": examples}
+        return {"available": True, "issues_count": len(matches), "examples": examples}
+    except Exception:
+        return {"available": False, "issues_count": 0, "examples": []}
 
-# ==================== ENHANCED VISUALIZATION FUNCTIONS ====================
-def create_heatmap(data: pd.DataFrame, title: str, color_scale: str = "Viridis") -> go.Figure:
+# ==================== VISUALIZATION FUNCTIONS ====================
+def create_heatmap(data: pd.DataFrame, title: str) -> go.Figure:
     """Create an enhanced heatmap with annotations"""
     fig = go.Figure(data=go.Heatmap(
         z=data.values,
         x=data.columns,
         y=data.index,
-        colorscale=color_scale,
+        colorscale='Viridis',
         hoverongaps=False,
         hovertemplate='<b>%{y}</b><br>%{x}: %{z:.2f}<extra></extra>',
         showscale=True
@@ -431,11 +374,36 @@ def create_heatmap(data: pd.DataFrame, title: str, color_scale: str = "Viridis")
         title=title,
         xaxis_title="Criteria",
         yaxis_title="Students",
-        height=500,
-        font=dict(family="Inter, sans-serif"),
-        plot_bgcolor=COLOR_SCHEME['background']
+        height=500
     )
     
+    return fig
+
+def create_ct_radar_chart(ct_scores: Dict[str, float], title: str) -> go.Figure:
+    """Create radar chart for CT scores"""
+    categories = list(ct_scores.keys())
+    values = list(ct_scores.values())
+    
+    fig = go.Figure()
+    fig.add_trace(go.Scatterpolar(
+        r=values + [values[0]],
+        theta=categories + [categories[0]],
+        fill='toself',
+        fillcolor=f'rgba(46, 125, 91, 0.3)',
+        line=dict(color=COLOR_SCHEME["primary"], width=2),
+        name='CT Standards'
+    ))
+    
+    fig.update_layout(
+        polar=dict(
+            radialaxis=dict(
+                visible=True,
+                range=[0, 1]
+            )),
+        showlegend=False,
+        title=title,
+        height=400
+    )
     return fig
 
 def create_comprehensive_dashboard(grading_results, ct_results):
@@ -454,20 +422,13 @@ def create_comprehensive_dashboard(grading_results, ct_results):
         st.metric("Average Grade", f"{avg_grade:.1f}/10")
     
     with col2:
-        # FIXED: Safe CT results processing
         avg_ct = 0
-        if ct_results and len(ct_results) > 0:
+        if ct_results:
             ct_scores_list = []
             for result in ct_results:
-                try:
-                    if isinstance(result, tuple) and len(result) >= 2:
-                        ct_scores = result[1]
-                        ct_scores_list.append(ct_scores)
-                    elif isinstance(result, dict):
-                        ct_scores = result.get('ct_scores', {})
-                        ct_scores_list.append(ct_scores)
-                except Exception:
-                    continue
+                if isinstance(result, tuple) and len(result) >= 2:
+                    ct_scores = result[1]
+                    ct_scores_list.append(ct_scores)
             
             if ct_scores_list:
                 avg_ct = np.mean([np.mean(list(scores.values())) for scores in ct_scores_list])
@@ -478,118 +439,76 @@ def create_comprehensive_dashboard(grading_results, ct_results):
         st.metric("Strong Performers", f"{strong_performers}/{len(grading_results)}")
     
     with col4:
-        # FIXED: Safe CT results processing
         improvement_needed = 0
-        if ct_results and len(ct_results) > 0:
+        if ct_results:
             for result in ct_results:
-                try:
-                    if isinstance(result, tuple) and len(result) >= 2:
-                        ct_scores = result[1]
-                        if np.mean(list(ct_scores.values())) < 0.6:
-                            improvement_needed += 1
-                    elif isinstance(result, dict):
-                        ct_scores = result.get('ct_scores', {})
-                        if np.mean(list(ct_scores.values())) < 0.6:
-                            improvement_needed += 1
-                except Exception:
-                    continue
+                if isinstance(result, tuple) and len(result) >= 2:
+                    ct_scores = result[1]
+                    if np.mean(list(ct_scores.values())) < 0.6:
+                        improvement_needed += 1
         st.metric("Need CT Support", f"{improvement_needed}/{len(ct_results)}")
     
     # Enhanced Visualizations in Tabs
     tab1, tab2, tab3, tab4 = st.tabs(["📈 Grade Distribution", "🎯 CT Analysis", "📊 Performance Matrix", "📋 Comparative Analysis"])
     
     with tab1:
-        # Grade distribution with multiple charts
-        if grading_results:
-            col1, col2 = st.columns(2)
-            with col1:
-                grades = [r.get('final_score', 0) for r in grading_results]
-                fig = px.histogram(x=grades, nbins=10, title="Grade Distribution",
-                                 color_discrete_sequence=[COLOR_SCHEME["primary"]])
-                fig.update_layout(height=400, showlegend=False)
-                st.plotly_chart(fig, use_container_width=True)
-            
-            with col2:
-                # Grade progression (simulated)
-                students = [r.get('name', f'Student {i+1}') for i, r in enumerate(grading_results)]
-                fig = px.line(x=range(len(grades)), y=sorted(grades), title="Grade Progression",
-                            labels={'x': 'Student Rank', 'y': 'Grade'})
-                fig.update_layout(height=400)
-                st.plotly_chart(fig, use_container_width=True)
+        if not grading_results:
+            st.info("No grading data available. Run the Auto-Grading module first.")
+        else:
+            grades = [r.get('final_score', 0) for r in grading_results]
+            fig = px.histogram(x=grades, nbins=10, title="Grade Distribution",
+                             color_discrete_sequence=[COLOR_SCHEME["primary"]])
+            fig.update_layout(height=400, showlegend=False)
+            st.plotly_chart(fig, use_container_width=True)
     
     with tab2:
-        # CT Analysis Heatmap - FIXED: Safe data processing
-        if ct_results and len(ct_results) > 0:
+        if not ct_results:
+            st.info("No CT analysis data available. Run the CT Analysis module first.")
+        else:
             ct_df_data = []
             for result in ct_results:
-                try:
-                    if isinstance(result, tuple) and len(result) >= 2:
-                        filename = result[0]
-                        ct_scores = result[1]
-                        row = {"Filename": filename}
-                        row.update(ct_scores)
-                        ct_df_data.append(row)
-                    elif isinstance(result, dict):
-                        row = {"Filename": result.get('filename', 'Unknown')}
-                        row.update(result.get('ct_scores', {}))
-                        ct_df_data.append(row)
-                except Exception:
-                    continue
+                if isinstance(result, tuple) and len(result) >= 2:
+                    filename = result[0]
+                    ct_scores = result[1]
+                    row = {"Filename": filename}
+                    row.update(ct_scores)
+                    ct_df_data.append(row)
             
             if ct_df_data:
                 ct_df = pd.DataFrame(ct_df_data)
                 ct_heatmap_data = ct_df.set_index("Filename")
-                
-                fig = create_heatmap(ct_heatmap_data, "Critical Thinking Skills Heatmap", "Viridis")
+                fig = create_heatmap(ct_heatmap_data, "Critical Thinking Skills Heatmap")
                 st.plotly_chart(fig, use_container_width=True)
     
     with tab3:
-        # Performance correlation matrix - FIXED: Safe data processing
-        if grading_results and ct_results:
-            # Create combined performance matrix
+        if not grading_results or not ct_results:
+            st.info("Need both grading and CT analysis data for performance matrix.")
+        else:
             performance_data = []
             for i, grade_result in enumerate(grading_results):
                 if i < len(ct_results):
                     ct_result = ct_results[i]
-                    try:
-                        if isinstance(ct_result, tuple) and len(ct_result) >= 2:
-                            avg_ct_score = np.mean(list(ct_result[1].values()))
-                        else:
-                            avg_ct_score = np.mean(list(ct_result.values())) if isinstance(ct_result, dict) else 0
-                        
+                    if isinstance(ct_result, tuple) and len(ct_result) >= 2:
+                        avg_ct_score = np.mean(list(ct_result[1].values()))
                         row = {
                             'Student': grade_result.get('name', f'Student {i+1}'),
                             'Grade': grade_result.get('final_score', 0),
                             'Avg_CT_Score': avg_ct_score
                         }
                         performance_data.append(row)
-                    except Exception:
-                        continue
             
             if performance_data:
                 perf_df = pd.DataFrame(performance_data)
-                
-                col1, col2 = st.columns(2)
-                with col1:
-                    # Scatter plot: Grade vs CT Score
-                    fig = px.scatter(perf_df, x='Grade', y='Avg_CT_Score', hover_data=['Student'],
-                                   title="Grade vs Critical Thinking Correlation",
-                                   color_discrete_sequence=[COLOR_SCHEME["accent"]])
-                    fig.update_layout(height=400)
-                    st.plotly_chart(fig, use_container_width=True)
-                
-                with col2:
-                    # Performance matrix
-                    fig = px.density_heatmap(perf_df, x='Grade', y='Avg_CT_Score',
-                                           title="Performance Density Matrix",
-                                           nbinsx=8, nbinsy=8)
-                    fig.update_layout(height=400)
-                    st.plotly_chart(fig, use_container_width=True)
+                fig = px.scatter(perf_df, x='Grade', y='Avg_CT_Score', hover_data=['Student'],
+                               title="Grade vs Critical Thinking Correlation",
+                               color_discrete_sequence=[COLOR_SCHEME["accent"]])
+                fig.update_layout(height=400)
+                st.plotly_chart(fig, use_container_width=True)
     
     with tab4:
-        # Comparative analysis
-        if grading_results:
-            # Create comparison bar chart
+        if not grading_results:
+            st.info("No grading data available for comparison.")
+        else:
             students = [r.get('name', f'Student {i+1}') for i, r in enumerate(grading_results)]
             grades = [r.get('final_score', 0) for r in grading_results]
             
@@ -607,43 +526,12 @@ def create_comprehensive_dashboard(grading_results, ct_results):
             )
             
             st.plotly_chart(fig, use_container_width=True)
-def create_ct_radar_chart(ct_scores: Dict[str, float], title: str) -> go.Figure:
-    """Create radar chart for CT scores"""
-    categories = list(ct_scores.keys())
-    values = list(ct_scores.values())
-    
-    fig = go.Figure()
-    fig.add_trace(go.Scatterpolar(
-        r=values + [values[0]],
-        theta=categories + [categories[0]],
-        fill='toself',
-        fillcolor=f'rgba({int(COLOR_SCHEME["primary"][1:3], 16)}, {int(COLOR_SCHEME["primary"][3:5], 16)}, {int(COLOR_SCHEME["primary"][5:7], 16)}, 0.3)',
-        line=dict(color=COLOR_SCHEME["primary"], width=2),
-        name='CT Standards'
-    ))
-    
-    fig.update_layout(
-        polar=dict(
-            radialaxis=dict(
-                visible=True,
-                range=[0, 1]
-            )),
-        showlegend=False,
-        title=title,
-        height=400,
-        font=dict(family="Inter, sans-serif")
-    )
-    return fig
 
 # ==================== CRITICAL THINKING MODULE ====================
 def sentence_split(text: str) -> List[str]:
     """Split text into sentences"""
     sents = re.split(r'(?<=[.!?])\s+', text)
     return [s.strip() for s in sents if s.strip()]
-
-def tokenize_simple(s: str) -> List[str]:
-    """Simple tokenization"""
-    return re.findall(r"\w+['-]?\w*|\w+", s.lower())
 
 def highlight_ct_sentences(text: str) -> Dict[str, List[Tuple[str, str]]]:
     """Highlight sentences matching CT criteria"""
@@ -675,9 +563,7 @@ def display_text_with_highlights(text: str, highlights: Dict[str, List[Tuple[str
     # Display each sentence with appropriate highlighting
     for sent in sents:
         if sent in sentence_to_standards:
-            # This sentence has CT highlights
             standards_info = sentence_to_standards[sent]
-            # Use the first standard's color for highlighting
             first_standard, first_color = standards_info[0]
             all_standards = ", ".join([std for std, _ in standards_info])
             
@@ -688,13 +574,12 @@ def display_text_with_highlights(text: str, highlights: Dict[str, List[Tuple[str
                 unsafe_allow_html=True
             )
         else:
-            # Regular sentence without CT highlights
             st.write(sent)
 
 def heuristic_ct_scores(text: str) -> Tuple[Dict[str, float], Dict[str, str], Dict[str, List[Tuple[str, str]]]]:
     """Calculate CT scores with highlighting"""
     sents = sentence_split(text)
-    tokens = tokenize_simple(text)
+    tokens = re.findall(r"\w+['-]?\w*|\w+", text.lower())
     word_count = len(tokens)
     scores = {}
     suggestions = {}
@@ -714,8 +599,8 @@ def heuristic_ct_scores(text: str) -> Tuple[Dict[str, float], Dict[str, str], Di
     suggestions["Accuracy"] = PAUL_CT_RUBRIC["Accuracy"]["feedback_q"]
 
     if sents:
-        first = tokenize_simple(sents[0])
-        overlap_counts = sum(1 for sent in sents[1:] if any(w in tokenize_simple(sent) for w in first[:5]))
+        first = re.findall(r"\w+['-]?\w*|\w+", sents[0].lower())
+        overlap_counts = sum(1 for sent in sents[1:] if any(w in re.findall(r"\w+['-]?\w*|\w+", sent.lower()) for w in first[:5]))
         relevance_score = min(1.0, (overlap_counts+1) / max(1, len(sents)))
     else:
         relevance_score = 0.0
@@ -759,6 +644,46 @@ def heuristic_ct_scores(text: str) -> Tuple[Dict[str, float], Dict[str, str], Di
     
     return scores, suggestions, highlighted
 
+# ==================== SAMPLE DATA GENERATION ====================
+def generate_sample_data():
+    """Generate sample data for testing visualizations"""
+    st.info("📊 Generating sample data for demonstration...")
+    
+    # Sample grading results
+    sample_grades = [
+        {"name": "Student 1", "final_score": 8.5},
+        {"name": "Student 2", "final_score": 7.2},
+        {"name": "Student 3", "final_score": 9.1},
+        {"name": "Student 4", "final_score": 6.8},
+        {"name": "Student 5", "final_score": 8.9},
+        {"name": "Student 6", "final_score": 7.5},
+        {"name": "Student 7", "final_score": 6.2},
+        {"name": "Student 8", "final_score": 8.7}
+    ]
+    
+    # Sample CT results
+    sample_ct_results = []
+    for i in range(8):
+        ct_scores = {
+            "Clarity": round(np.random.uniform(0.5, 0.9), 2),
+            "Accuracy": round(np.random.uniform(0.4, 0.8), 2),
+            "Relevance": round(np.random.uniform(0.6, 0.95), 2),
+            "Significance": round(np.random.uniform(0.5, 0.85), 2),
+            "Logic": round(np.random.uniform(0.4, 0.8), 2),
+            "Precision": round(np.random.uniform(0.5, 0.9), 2),
+            "Fairness": round(np.random.uniform(0.3, 0.7), 2),
+            "Depth": round(np.random.uniform(0.4, 0.8), 2),
+            "Breadth": round(np.random.uniform(0.5, 0.9), 2)
+        }
+        suggestions = {k: f"Practice {k} skills" for k in ct_scores.keys()}
+        sample_text = f"This is a sample student response for Student {i+1}. For example, it demonstrates critical thinking skills. The main argument is supported by data and research findings. Therefore, the conclusion follows logically from the evidence presented."
+        highlights = highlight_ct_sentences(sample_text)
+        sample_ct_results.append((f"Student {i+1}", ct_scores, suggestions, highlights, sample_text))
+    
+    st.session_state.grading_results = sample_grades
+    st.session_state.ct_results = sample_ct_results
+    st.success("✅ Sample data generated! You can now explore all visualizations.")
+
 # ==================== MAIN APPLICATION ====================
 def main():
     # Page configuration
@@ -783,8 +708,6 @@ def main():
         st.session_state.grading_results = []
     if 'ct_results' not in st.session_state:
         st.session_state.ct_results = []
-    if 'student_data' not in st.session_state:
-        st.session_state.student_data = {}
     
     # Sidebar navigation
     with st.sidebar:
@@ -795,14 +718,11 @@ def main():
             "dashboard": "📊 Dashboard",
             "grading": "🎓 Auto-Grading (0-10)",
             "critical_thinking": "💭 CT Analysis", 
-            "progress": "📈 Progress Tracking",
             "resources": "📚 Learning Resources"
         }
         
         for module_id, module_name in modules.items():
-            if st.button(module_name, key=f"nav_{module_id}", 
-                        use_container_width=True,
-                        type="primary" if st.session_state.current_module == module_id else "secondary"):
+            if st.button(module_name, key=f"nav_{module_id}", use_container_width=True):
                 st.session_state.current_module = module_id
                 st.rerun()
         
@@ -825,8 +745,8 @@ def main():
         if st.button("🔄 Clear All Data", use_container_width=True):
             st.session_state.grading_results = []
             st.session_state.ct_results = []
-            st.session_state.student_data = {}
             st.success("Data cleared successfully!")
+            st.rerun()
     
     # Main content area based on selected module
     if st.session_state.current_module == "dashboard":
@@ -835,8 +755,6 @@ def main():
         show_grading_module()
     elif st.session_state.current_module == "critical_thinking":
         show_ct_module()
-    elif st.session_state.current_module == "progress":
-        show_progress_module()
     elif st.session_state.current_module == "resources":
         show_resources_module()
 
@@ -897,19 +815,34 @@ def show_dashboard():
         </div>
         """, unsafe_allow_html=True)
     
+    # Sample data button
+    if not st.session_state.grading_results and not st.session_state.ct_results:
+        st.markdown("---")
+        st.markdown("### 🚀 Get Started")
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            st.info("To see the dashboard in action, you can:")
+            st.markdown("""
+            - **Upload real data** using the Auto-Grading or CT Analysis modules
+            - **Generate sample data** to explore all features immediately
+            """)
+        with col2:
+            if st.button("🎲 Generate Sample Data", use_container_width=True):
+                generate_sample_data()
+    
     # Recent activity
     st.markdown("## 📋 Recent Activity")
     
     if st.session_state.grading_results or st.session_state.ct_results:
         create_comprehensive_dashboard(st.session_state.grading_results, st.session_state.ct_results)
     else:
-        st.info("👆 Get started by using the Auto-Grading or CT Analysis modules to generate data for your dashboard.")
+        st.info("👆 Get started by using the Auto-Grading or CT Analysis modules, or generate sample data to explore all visualizations.")
 
 def show_grading_module():
     """Auto-grading module"""
     st.markdown("## 🎓 Automated Grading Module (0-10 Scale)")
     
-    tab1, tab2, tab3 = st.tabs(["📥 Input Materials", "🎯 Grading Results", "⚙️ Settings"])
+    tab1, tab2 = st.tabs(["📥 Input Materials", "🎯 Grading Results"])
     
     with tab1:
         st.markdown("### Upload Learning Materials")
@@ -944,19 +877,12 @@ def show_grading_module():
     
     with tab2:
         display_grading_results()
-    
-    with tab3:
-        st.markdown("### Grading Configuration")
-        st.slider("Similarity Weight", 0.0, 1.0, 0.7, help="How much weight to give content similarity")
-        st.slider("Grammar Penalty", 0.0, 2.0, 1.5, help="Points deducted per grammar issue")
-        st.toggle("Enable AI Feedback", value=True)
-        st.toggle("Show Detailed Breakdown", value=True)
 
 def show_ct_module():
     """Critical Thinking analysis module"""
     st.markdown("## 💭 Critical Thinking Analysis")
     
-    tab1, tab2, tab3 = st.tabs(["📊 CT Assessment", "🎯 CT Rubric Guide", "📈 CT Analytics"])
+    tab1, tab2 = st.tabs(["📊 CT Assessment", "🎯 CT Rubric Guide"])
     
     with tab1:
         st.markdown("### Analyze Critical Thinking Skills")
@@ -970,57 +896,31 @@ def show_ct_module():
         
         if uploaded_files:
             if st.button("🔍 Analyze Critical Thinking", type="primary", use_container_width=True):
-                with st.spinner("Analyzing critical thinking skills..."):
-                    process_ct_analysis(uploaded_files)
+                process_ct_analysis(uploaded_files)
         
-        # Display CT results - FIXED: Safe tuple unpacking
+        # Display CT results
         if st.session_state.ct_results:
             st.markdown("### CT Analysis Results")
             for i, result in enumerate(st.session_state.ct_results):
-                # Safe unpacking with error handling
-                try:
-                    if isinstance(result, tuple) and len(result) >= 4:
-                        filename = result[0]
-                        ct_scores = result[1]
-                        suggestions = result[2]
-                        highlights = result[3]
-                        text = result[4] if len(result) > 4 else ""
-                    else:
-                        # Handle unexpected format
-                        filename = getattr(result, 'filename', f'Result {i+1}')
-                        ct_scores = getattr(result, 'ct_scores', {})
-                        suggestions = getattr(result, 'suggestions', {})
-                        highlights = getattr(result, 'highlights', {})
-                        text = getattr(result, 'text', "")
-                    
+                if isinstance(result, tuple) and len(result) >= 5:
+                    filename, ct_scores, suggestions, highlights, text = result
                     with st.expander(f"🧠 {filename}", expanded=i==0):
                         col1, col2 = st.columns([2, 1])
                         
                         with col1:
                             st.markdown("#### 📖 Text with CT Highlights")
-                            if text:
-                                display_text_with_highlights(text, highlights)
-                            else:
-                                st.info("Original text not available for highlighting")
+                            display_text_with_highlights(text, highlights)
                                 
                         with col2:
                             # CT radar chart
-                            if ct_scores:
-                                fig = create_ct_radar_chart(ct_scores, f"CT Profile - {filename}")
-                                st.plotly_chart(fig, use_container_width=True)
-                                
-                                # Improvement suggestions
-                                st.markdown("#### 💡 Improvement Areas")
-                                for standard, score in ct_scores.items():
-                                    if score < 0.6:
-                                        suggestion = suggestions.get(standard, "Focus on improving this area.")
-                                        st.warning(f"**{standard}**: {suggestion}")
-                            else:
-                                st.info("No CT scores available")
-                                
-                except Exception as e:
-                    st.error(f"Error displaying result {i+1}: {str(e)}")
-                    continue
+                            fig = create_ct_radar_chart(ct_scores, f"CT Profile - {filename}")
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                            # Improvement suggestions
+                            st.markdown("#### 💡 Improvement Areas")
+                            for standard, score in ct_scores.items():
+                                if score < 0.6:
+                                    st.warning(f"**{standard}**: {suggestions.get(standard, 'Focus on improving this area.')}")
     
     with tab2:
         st.markdown("### Critical Thinking Standards Guide")
@@ -1031,67 +931,12 @@ def show_ct_module():
                 st.markdown(f"**Feedback Prompt:** *{data['feedback_q']}*")
                 st.markdown(f"**Color Code:** `{data['color']}`")
                 st.markdown("**Indicator Patterns:** " + ", ".join(f"`{p}`" for p in data['patterns']))
-    
-    with tab3:
-        st.markdown("### CT Analytics Overview")
-        if st.session_state.ct_results:
-            # CT scores comparison - FIXED: Safe data extraction
-            ct_df_data = []
-            for result in st.session_state.ct_results:
-                try:
-                    if isinstance(result, tuple) and len(result) >= 2:
-                        filename = result[0]
-                        ct_scores = result[1]
-                        row = {"Filename": filename}
-                        row.update(ct_scores)
-                        ct_df_data.append(row)
-                    elif isinstance(result, dict):
-                        row = {"Filename": result.get('filename', 'Unknown')}
-                        row.update(result.get('ct_scores', {}))
-                        ct_df_data.append(row)
-                except Exception:
-                    continue
-            
-            if ct_df_data:
-                ct_df = pd.DataFrame(ct_df_data)
-                st.dataframe(ct_df.set_index("Filename").round(3), use_container_width=True)
-                
-                # Visualization
-                melted_df = ct_df.melt(id_vars=["Filename"], var_name="CT Standard", value_name="Score")
-                fig = px.box(melted_df, x="CT Standard", y="Score", 
-                            title="Distribution of CT Scores Across Standards",
-                            color_discrete_sequence=[COLOR_SCHEME["primary"]])
-                st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("No CT analysis data available. Run an analysis first.")
-
-def show_progress_module():
-    """Progress tracking module"""
-    st.markdown("## 📈 Learning Progress Tracking")
-    
-    if not st.session_state.grading_results and not st.session_state.ct_results:
-        st.info("No progress data available. Complete some grading or CT analyses first.")
-        return
-    
-    # FIXED: Pass CT results properly to dashboard
-    create_comprehensive_dashboard(st.session_state.grading_results, st.session_state.ct_results)
-    
-    # Individual student progress
-    st.markdown("### 👤 Individual Progress Analysis")
-    
-    if st.session_state.grading_results:
-        student_options = [r.get('name', f'Student {i+1}') for i, r in enumerate(st.session_state.grading_results)]
-        selected_student = st.selectbox("Select Student", student_options)
-        
-        if selected_student:
-            student_idx = student_options.index(selected_student)
-            display_student_progress(student_idx)
 
 def show_resources_module():
     """Learning resources module"""
     st.markdown("## 📚 Learning Resources")
     
-    tab1, tab2, tab3 = st.tabs(["💡 CT Exercises", "📖 Study Materials", "🎯 Improvement Plans"])
+    tab1, tab2 = st.tabs(["💡 CT Exercises", "📖 Study Materials"])
     
     with tab1:
         st.markdown("### Critical Thinking Exercises")
@@ -1121,30 +966,6 @@ def show_resources_module():
             st.markdown("- Practice providing clear examples and explanations")
             st.markdown("- Use specific language to illustrate points")
             st.markdown("- Structure information logically")
-    
-    with tab3:
-        st.markdown("### Personalized Improvement Plans")
-        
-        if st.session_state.ct_results:
-            for result in st.session_state.ct_results:
-                if isinstance(result, tuple) and len(result) >= 3:
-                    filename, ct_scores, suggestions, _ = result
-                    with st.expander(f"📋 Improvement Plan - {filename}"):
-                        weak_areas = [(std, score) for std, score in ct_scores.items() if score < 0.6]
-                        strong_areas = [(std, score) for std, score in ct_scores.items() if score >= 0.7]
-                        
-                        if weak_areas:
-                            st.markdown("#### 🎯 Focus Areas")
-                            for std, score in weak_areas:
-                                st.markdown(f"**{std}** (Score: {score:.2f})")
-                                st.markdown(f"*Suggestion:* {suggestions[std]}")
-                        
-                        if strong_areas:
-                            st.markdown("#### ✅ Strengths")
-                            for std, score in strong_areas:
-                                st.markdown(f"**{std}** (Score: {score:.2f})")
-        else:
-            st.info("No CT analysis data available. Run a CT analysis first to generate improvement plans.")
 
 # ==================== PROCESSING FUNCTIONS ====================
 def process_grading(ex_file, ex_text_paste, model_file, model_text_paste, student_files, student_paste, rubric_file, rubric_text_paste):
@@ -1247,7 +1068,7 @@ def process_grading(ex_file, ex_text_paste, model_file, model_text_paste, studen
     st.rerun()
 
 def process_ct_analysis(uploaded_files):
-    """Process CT analysis with consistent data structure"""
+    """Process CT analysis"""
     submissions = []
     for f in uploaded_files:
         text = read_text_file(f)
@@ -1265,24 +1086,15 @@ def process_ct_analysis(uploaded_files):
         progress = (idx) / len(submissions)
         progress_bar.progress(progress, text=f"Analyzing {idx+1}/{len(submissions)}...")
         
-        try:
-            ct_scores, suggestions, highlights = heuristic_ct_scores(submission["text"])
-            # Store as tuple with consistent structure: (filename, ct_scores, suggestions, highlights, text)
-            ct_results.append((
-                submission["filename"], 
-                ct_scores, 
-                suggestions, 
-                highlights, 
-                submission["text"]  # Make sure text is included
-            ))
-        except Exception as e:
-            st.error(f"Error analyzing {submission['filename']}: {str(e)}")
-            continue
+        ct_scores, suggestions, highlights = heuristic_ct_scores(submission["text"])
+        # Store as tuple with consistent structure
+        ct_results.append((submission["filename"], ct_scores, suggestions, highlights, submission["text"]))
     
     progress_bar.progress(1.0, text="✅ CT analysis complete!")
     st.session_state.ct_results = ct_results
     st.success(f"🎉 Analyzed {len(submissions)} submissions for critical thinking!")
-    
+    st.rerun()
+
 def display_grading_results():
     """Display grading results"""
     if not st.session_state.grading_results:
@@ -1322,47 +1134,6 @@ def display_grading_results():
                     st.markdown(f'<div class="feedback-item">💡 {line}</div>', unsafe_allow_html=True)
             
             st.divider()
-
-def display_student_progress(student_idx):
-    """Display individual student progress"""
-    if student_idx < len(st.session_state.grading_results):
-        student_data = st.session_state.grading_results[student_idx]
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.markdown("#### 📈 Academic Performance")
-            st.metric("Current Grade", f"{student_data.get('final_score', 0)}/10")
-            
-            # Grade trend (simplified)
-            st.markdown("**Performance Trends:**")
-            st.info("Consistent performance across assignments")
-        
-        with col2:
-            st.markdown("#### 💭 Critical Thinking")
-            if student_idx < len(st.session_state.ct_results):
-                ct_result = st.session_state.ct_results[student_idx]
-                if isinstance(ct_result, tuple) and len(ct_result) >= 2:
-                    ct_scores = ct_result[1]
-                    avg_ct = np.mean(list(ct_scores.values()))
-                    st.metric("Average CT Score", f"{avg_ct:.2f}")
-                    
-                    # CT strengths/weaknesses
-                    weak_areas = [std for std, score in ct_scores.items() if score < 0.6]
-                    st.markdown(f"**Areas for Improvement:** {', '.join(weak_areas) if weak_areas else 'None'}")
-                else:
-                    st.info("CT data format error")
-            else:
-                st.info("No CT analysis available for this student")
-        
-        # Learning recommendations
-        st.markdown("#### 🎯 Recommended Actions")
-        st.markdown("""
-        - Complete targeted CT exercises in weak areas
-        - Review model solutions for complex problems
-        - Practice argument construction and evidence evaluation
-        - Participate in peer review activities
-        """)
 
 if __name__ == "__main__":
     main()
