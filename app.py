@@ -955,24 +955,31 @@ def show_ct_module():
                 with st.spinner("Analyzing critical thinking skills..."):
                     process_ct_analysis(uploaded_files)
         
-        # Display CT results
+        # Display CT results - FIXED: Safe tuple unpacking
         if st.session_state.ct_results:
             st.markdown("### CT Analysis Results")
             for i, result in enumerate(st.session_state.ct_results):
-                if isinstance(result, tuple) and len(result) >= 4:
-                    filename, ct_scores, suggestions, highlights = result
+                # Safe unpacking with error handling
+                try:
+                    if isinstance(result, tuple) and len(result) >= 4:
+                        filename = result[0]
+                        ct_scores = result[1]
+                        suggestions = result[2]
+                        highlights = result[3]
+                        text = result[4] if len(result) > 4 else ""
+                    else:
+                        # Handle unexpected format
+                        filename = getattr(result, 'filename', f'Result {i+1}')
+                        ct_scores = getattr(result, 'ct_scores', {})
+                        suggestions = getattr(result, 'suggestions', {})
+                        highlights = getattr(result, 'highlights', {})
+                        text = getattr(result, 'text', "")
+                    
                     with st.expander(f"🧠 {filename}", expanded=i==0):
                         col1, col2 = st.columns([2, 1])
                         
                         with col1:
                             st.markdown("#### 📖 Text with CT Highlights")
-                            # Get the original text for this file
-                            text = ""
-                            if hasattr(result, 'text'):
-                                text = result.text
-                            elif len(result) >= 5:
-                                text = result[4]  # Text is stored as the 5th element
-                            
                             if text:
                                 display_text_with_highlights(text, highlights)
                             else:
@@ -980,14 +987,22 @@ def show_ct_module():
                                 
                         with col2:
                             # CT radar chart
-                            fig = create_ct_radar_chart(ct_scores, f"CT Profile - {filename}")
-                            st.plotly_chart(fig, use_container_width=True)
-                            
-                            # Improvement suggestions
-                            st.markdown("#### 💡 Improvement Areas")
-                            for standard, score in ct_scores.items():
-                                if score < 0.6:
-                                    st.warning(f"**{standard}**: {suggestions[standard]}")
+                            if ct_scores:
+                                fig = create_ct_radar_chart(ct_scores, f"CT Profile - {filename}")
+                                st.plotly_chart(fig, use_container_width=True)
+                                
+                                # Improvement suggestions
+                                st.markdown("#### 💡 Improvement Areas")
+                                for standard, score in ct_scores.items():
+                                    if score < 0.6:
+                                        suggestion = suggestions.get(standard, "Focus on improving this area.")
+                                        st.warning(f"**{standard}**: {suggestion}")
+                            else:
+                                st.info("No CT scores available")
+                                
+                except Exception as e:
+                    st.error(f"Error displaying result {i+1}: {str(e)}")
+                    continue
     
     with tab2:
         st.markdown("### Critical Thinking Standards Guide")
@@ -1002,18 +1017,22 @@ def show_ct_module():
     with tab3:
         st.markdown("### CT Analytics Overview")
         if st.session_state.ct_results:
-            # CT scores comparison
+            # CT scores comparison - FIXED: Safe data extraction
             ct_df_data = []
             for result in st.session_state.ct_results:
-                if isinstance(result, tuple) and len(result) >= 2:
-                    filename, ct_scores, _, _ = result
-                    row = {"Filename": filename}
-                    row.update(ct_scores)
-                    ct_df_data.append(row)
-                elif isinstance(result, dict):
-                    row = {"Filename": result.get('filename', 'Unknown')}
-                    row.update(result.get('ct_scores', {}))
-                    ct_df_data.append(row)
+                try:
+                    if isinstance(result, tuple) and len(result) >= 2:
+                        filename = result[0]
+                        ct_scores = result[1]
+                        row = {"Filename": filename}
+                        row.update(ct_scores)
+                        ct_df_data.append(row)
+                    elif isinstance(result, dict):
+                        row = {"Filename": result.get('filename', 'Unknown')}
+                        row.update(result.get('ct_scores', {}))
+                        ct_df_data.append(row)
+                except Exception:
+                    continue
             
             if ct_df_data:
                 ct_df = pd.DataFrame(ct_df_data)
@@ -1210,7 +1229,7 @@ def process_grading(ex_file, ex_text_paste, model_file, model_text_paste, studen
     st.rerun()
 
 def process_ct_analysis(uploaded_files):
-    """Process CT analysis"""
+    """Process CT analysis with consistent data structure"""
     submissions = []
     for f in uploaded_files:
         text = read_text_file(f)
@@ -1228,14 +1247,24 @@ def process_ct_analysis(uploaded_files):
         progress = (idx) / len(submissions)
         progress_bar.progress(progress, text=f"Analyzing {idx+1}/{len(submissions)}...")
         
-        ct_scores, suggestions, highlights = heuristic_ct_scores(submission["text"])
-        # Store as tuple with text included: (filename, ct_scores, suggestions, highlights, text)
-        ct_results.append((submission["filename"], ct_scores, suggestions, highlights, submission["text"]))
+        try:
+            ct_scores, suggestions, highlights = heuristic_ct_scores(submission["text"])
+            # Store as tuple with consistent structure: (filename, ct_scores, suggestions, highlights, text)
+            ct_results.append((
+                submission["filename"], 
+                ct_scores, 
+                suggestions, 
+                highlights, 
+                submission["text"]  # Make sure text is included
+            ))
+        except Exception as e:
+            st.error(f"Error analyzing {submission['filename']}: {str(e)}")
+            continue
     
     progress_bar.progress(1.0, text="✅ CT analysis complete!")
     st.session_state.ct_results = ct_results
     st.success(f"🎉 Analyzed {len(submissions)} submissions for critical thinking!")
-
+    
 def display_grading_results():
     """Display grading results"""
     if not st.session_state.grading_results:
