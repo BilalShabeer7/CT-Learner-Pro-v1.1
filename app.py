@@ -454,16 +454,23 @@ def create_comprehensive_dashboard(grading_results, ct_results):
         st.metric("Average Grade", f"{avg_grade:.1f}/10")
     
     with col2:
-        # FIXED: Handle both old and new CT results structure
+        # FIXED: Safe CT results processing
+        avg_ct = 0
         if ct_results and len(ct_results) > 0:
-            if isinstance(ct_results[0], tuple) and len(ct_results[0]) >= 2:
-                # New structure: (filename, ct_scores, suggestions, highlights, text)
-                avg_ct = np.mean([np.mean(list(r[1].values())) for r in ct_results])
-            else:
-                # Old structure or different format
-                avg_ct = np.mean([np.mean(list(r.values())) for r in ct_results if isinstance(r, dict)])
-        else:
-            avg_ct = 0
+            ct_scores_list = []
+            for result in ct_results:
+                try:
+                    if isinstance(result, tuple) and len(result) >= 2:
+                        ct_scores = result[1]
+                        ct_scores_list.append(ct_scores)
+                    elif isinstance(result, dict):
+                        ct_scores = result.get('ct_scores', {})
+                        ct_scores_list.append(ct_scores)
+                except Exception:
+                    continue
+            
+            if ct_scores_list:
+                avg_ct = np.mean([np.mean(list(scores.values())) for scores in ct_scores_list])
         st.metric("Average CT Score", f"{avg_ct:.2f}")
     
     with col3:
@@ -471,14 +478,21 @@ def create_comprehensive_dashboard(grading_results, ct_results):
         st.metric("Strong Performers", f"{strong_performers}/{len(grading_results)}")
     
     with col4:
-        # FIXED: Handle CT results structure properly
+        # FIXED: Safe CT results processing
+        improvement_needed = 0
         if ct_results and len(ct_results) > 0:
-            if isinstance(ct_results[0], tuple) and len(ct_results[0]) >= 2:
-                improvement_needed = len([r for r in ct_results if np.mean(list(r[1].values())) < 0.6])
-            else:
-                improvement_needed = len([r for r in ct_results if np.mean(list(r.values())) < 0.6])
-        else:
-            improvement_needed = 0
+            for result in ct_results:
+                try:
+                    if isinstance(result, tuple) and len(result) >= 2:
+                        ct_scores = result[1]
+                        if np.mean(list(ct_scores.values())) < 0.6:
+                            improvement_needed += 1
+                    elif isinstance(result, dict):
+                        ct_scores = result.get('ct_scores', {})
+                        if np.mean(list(ct_scores.values())) < 0.6:
+                            improvement_needed += 1
+                except Exception:
+                    continue
         st.metric("Need CT Support", f"{improvement_needed}/{len(ct_results)}")
     
     # Enhanced Visualizations in Tabs
@@ -504,21 +518,23 @@ def create_comprehensive_dashboard(grading_results, ct_results):
                 st.plotly_chart(fig, use_container_width=True)
     
     with tab2:
-        # CT Analysis Heatmap
+        # CT Analysis Heatmap - FIXED: Safe data processing
         if ct_results and len(ct_results) > 0:
             ct_df_data = []
             for result in ct_results:
-                if isinstance(result, tuple) and len(result) >= 2:
-                    # New structure
-                    filename, ct_scores, _, _ = result
-                    row = {"Filename": filename}
-                    row.update(ct_scores)
-                    ct_df_data.append(row)
-                elif isinstance(result, dict):
-                    # Old structure
-                    row = {"Filename": result.get('filename', 'Unknown')}
-                    row.update(result.get('ct_scores', {}))
-                    ct_df_data.append(row)
+                try:
+                    if isinstance(result, tuple) and len(result) >= 2:
+                        filename = result[0]
+                        ct_scores = result[1]
+                        row = {"Filename": filename}
+                        row.update(ct_scores)
+                        ct_df_data.append(row)
+                    elif isinstance(result, dict):
+                        row = {"Filename": result.get('filename', 'Unknown')}
+                        row.update(result.get('ct_scores', {}))
+                        ct_df_data.append(row)
+                except Exception:
+                    continue
             
             if ct_df_data:
                 ct_df = pd.DataFrame(ct_df_data)
@@ -528,24 +544,27 @@ def create_comprehensive_dashboard(grading_results, ct_results):
                 st.plotly_chart(fig, use_container_width=True)
     
     with tab3:
-        # Performance correlation matrix
+        # Performance correlation matrix - FIXED: Safe data processing
         if grading_results and ct_results:
             # Create combined performance matrix
             performance_data = []
             for i, grade_result in enumerate(grading_results):
                 if i < len(ct_results):
                     ct_result = ct_results[i]
-                    if isinstance(ct_result, tuple) and len(ct_result) >= 2:
-                        avg_ct_score = np.mean(list(ct_result[1].values()))
-                    else:
-                        avg_ct_score = np.mean(list(ct_result.values())) if isinstance(ct_result, dict) else 0
-                    
-                    row = {
-                        'Student': grade_result.get('name', f'Student {i+1}'),
-                        'Grade': grade_result.get('final_score', 0),
-                        'Avg_CT_Score': avg_ct_score
-                    }
-                    performance_data.append(row)
+                    try:
+                        if isinstance(ct_result, tuple) and len(ct_result) >= 2:
+                            avg_ct_score = np.mean(list(ct_result[1].values()))
+                        else:
+                            avg_ct_score = np.mean(list(ct_result.values())) if isinstance(ct_result, dict) else 0
+                        
+                        row = {
+                            'Student': grade_result.get('name', f'Student {i+1}'),
+                            'Grade': grade_result.get('final_score', 0),
+                            'Avg_CT_Score': avg_ct_score
+                        }
+                        performance_data.append(row)
+                    except Exception:
+                        continue
             
             if performance_data:
                 perf_df = pd.DataFrame(performance_data)
@@ -588,7 +607,6 @@ def create_comprehensive_dashboard(grading_results, ct_results):
             )
             
             st.plotly_chart(fig, use_container_width=True)
-
 def create_ct_radar_chart(ct_scores: Dict[str, float], title: str) -> go.Figure:
     """Create radar chart for CT scores"""
     categories = list(ct_scores.keys())
